@@ -1,8 +1,10 @@
-# Industrial Transcoder Rust v1
+# Dailies Rust Transcoder
 
 **Professional-grade media transcoding utilities for broadcast workflows**
 
 Built with Rust, Python, and TypeScript for maximum cross-platform compatibility.
+
+**Current Version:** v2.0 (BWF Integration) | [v1.0](https://github.com/sssgitit/Dailies-Rust-Transcoder/tree/main)
 
 ## Overview
 
@@ -13,6 +15,24 @@ Utilities for extracting, unifying, and managing Material Object Block (MOB) IDs
 
 ### 2. **BWF BEXT Timecode Calculator**
 Frame-accurate BEXT timecode calculation for Broadcast Wave Format files at 23.976fps, validated against professional transcoding systems.
+
+---
+
+## What's New in v2.0 🎉
+
+### Full Tauri Integration
+
+The BWF BEXT timecode calculator is now fully integrated into a Tauri application!
+
+**New in v2.0:**
+- ✅ Rust backend module (`tauri-integration/rust/bwf.rs`)
+- ✅ TypeScript API (`tauri-integration/typescript/bwf-api.ts`)
+- ✅ React UI component (`tauri-integration/typescript/BwfTimecodeCreator.tsx`)
+- ✅ Auto-extract timecode from MXF files
+- ✅ Quick Convert: MXF → BWF with one click
+- ✅ Ready for production use
+
+See [`V2_INTEGRATION.md`](./V2_INTEGRATION.md) for complete integration guide.
 
 ---
 
