@@ -1,0 +1,52 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+*.egg-info/
+dist/
+build/
+
+# Test files
+*.wav
+*.mxf
+*.mp4
+*.mov
+test_samples/
+test_output/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.temp
+*_temp.wav
+*_TEST.wav
+
+# Node
+node_modules/
+*.tsbuildinfo
+
+# Rust
+target/
+Cargo.lock
+**/*.rs.bk
+
+# Build outputs
+*.o
+*.exe
+*.dll
+*.dylib
+
