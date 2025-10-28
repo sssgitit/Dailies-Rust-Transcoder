@@ -1,0 +1,22 @@
+{
+  "preset_name": "XAVC-I to Avid DNxHR LB + BWF",
+  "description": "Fast transcode for Avid with BWF audio extraction",
+  "output_format": "mov",
+  "video_codec": "DNxHR",
+  "dnxhr_profile": "lb",
+  "pixel_format": "yuv422p",
+  "audio_codec": "PCM",
+  "audio_bitdepth": 24,
+  "audio_samplerate": 48000,
+  "map_all_audio": true,
+  "extract_bwf": true,
+  "parallel_jobs": 11,
+  "notes": [
+    "Output: QuickTime MOV with DNxHR LB codec",
+    "Avid compatible via AMA or consolidation",
+    "Automatically extracts BWF audio files alongside",
+    "Runs 11 parallel jobs on 12-core system",
+    "No MXF wrapping issues!"
+  ]
+}
+

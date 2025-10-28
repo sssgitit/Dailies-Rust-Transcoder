@@ -237,8 +237,21 @@ pub async fn transcode_dnxhr_lb(
     
     tracing::info!("Transcoding to DNxHR LB: {:?} -> {:?}", input_path, output_path);
     
+    // Verify input file exists
+    if !input_path.exists() {
+        return Err(format!("Input file does not exist: {:?}", input_path));
+    }
+    
+    // Create output directory if it doesn't exist
+    if let Some(parent) = output_path.parent() {
+        if !parent.exists() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| format!("Failed to create output directory: {}", e))?;
+        }
+    }
+    
     // Build FFmpeg command with hardware acceleration
-    let status = Command::new("ffmpeg")
+    let output = Command::new("ffmpeg")
         .args(&[
             "-y",
             "-hwaccel", "videotoolbox",  // Hardware decode
@@ -256,12 +269,24 @@ pub async fn transcode_dnxhr_lb(
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .status()
+        .output()
         .await
-        .map_err(|e| format!("FFmpeg failed: {}", e))?;
+        .map_err(|e| format!("Failed to execute FFmpeg: {}", e))?;
     
-    if !status.success() {
-        return Err(format!("Transcode failed with code: {:?}", status.code()));
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let error_msg = stderr
+            .lines()
+            .rev()
+            .take(10)
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .collect::<Vec<_>>()
+            .join("\n");
+        
+        tracing::error!("FFmpeg error: {}", error_msg);
+        return Err(format!("Transcode failed:\n{}", error_msg));
     }
     
     tracing::info!("Transcode completed successfully");
@@ -279,6 +304,19 @@ pub async fn create_bwf_from_mxf(
     use tokio::process::Command;
     
     tracing::info!("Creating BWF from MXF: {:?} -> {:?}", mxf_path, output_path);
+    
+    // Verify input file exists
+    if !mxf_path.exists() {
+        return Err(format!("Input file does not exist: {:?}", mxf_path));
+    }
+    
+    // Create output directory if it doesn't exist
+    if let Some(parent) = output_path.parent() {
+        if !parent.exists() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| format!("Failed to create output directory: {}", e))?;
+        }
+    }
     
     // Step 1: Extract timecode from MXF
     let tc_output = Command::new("ffprobe")
@@ -313,7 +351,7 @@ pub async fn create_bwf_from_mxf(
     // Step 2: Create temporary WAV (stereo mixdown)
     let temp_wav = output_path.with_extension("temp.wav");
     
-    let extract_status = Command::new("ffmpeg")
+    let extract_output = Command::new("ffmpeg")
         .args(&[
             "-y",
             "-i", mxf_path.to_str().ok_or("Invalid MXF path")?,
@@ -326,12 +364,24 @@ pub async fn create_bwf_from_mxf(
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .status()
+        .output()
         .await
-        .map_err(|e| format!("Audio extraction failed: {}", e))?;
+        .map_err(|e| format!("Failed to execute FFmpeg for audio extraction: {}", e))?;
     
-    if !extract_status.success() {
-        return Err(format!("Audio extraction failed with code: {:?}", extract_status.code()));
+    if !extract_output.status.success() {
+        let stderr = String::from_utf8_lossy(&extract_output.stderr);
+        let error_msg = stderr
+            .lines()
+            .rev()
+            .take(10)
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .collect::<Vec<_>>()
+            .join("\n");
+        
+        tracing::error!("FFmpeg audio extraction error: {}", error_msg);
+        return Err(format!("Audio extraction failed:\n{}", error_msg));
     }
     
     // Step 3: Calculate TimeReference using validated method
