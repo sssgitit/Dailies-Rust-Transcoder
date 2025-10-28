@@ -59,6 +59,7 @@ pub struct AddJobRequest {
     pub output_path: PathBuf,
     pub preset_name: String,
     pub priority: Option<job::Priority>,
+    pub create_bwf: Option<bool>,
 }
 
 /// Add a new job to the queue
@@ -73,19 +74,63 @@ pub async fn add_job(
         .get(&request.preset_name)
         .ok_or_else(|| format!("Unknown preset: {}", request.preset_name))?;
 
-    // Create job
-    let config_json = serde_json::to_value(&preset.config).map_err(|e| e.to_string())?;
-    let job = job::Job::new(
-        request.input_path,
-        request.output_path,
-        config_json,
-        request.priority.unwrap_or(job::Priority::Normal),
-    );
+    // Create job config with BWF option
+    let mut config = preset.config.clone();
+    if let Some(create_bwf) = request.create_bwf {
+        // Add BWF creation flag to config
+        let mut config_value = serde_json::to_value(&config).map_err(|e| e.to_string())?;
+        if let Some(obj) = config_value.as_object_mut() {
+            obj.insert("create_bwf".to_string(), serde_json::json!(create_bwf));
+        }
+        
+        let job = job::Job::new(
+            request.input_path.clone(),
+            request.output_path.clone(),
+            config_value,
+            request.priority.unwrap_or(job::Priority::Normal),
+        );
 
-    // Add to queue
-    let job_id = state.queue.add_job(job).await.map_err(|e| e.to_string())?;
+        // Add to queue
+        let job_id = state.queue.add_job(job).await.map_err(|e| e.to_string())?;
+        
+        // If BWF is requested, add a separate BWF job after the video job
+        if create_bwf {
+            // Create BWF output path (replace extension with .wav)
+            let bwf_output = request.output_path.with_extension("wav");
+            
+            // Create a simple config for BWF extraction
+            let bwf_config = serde_json::json!({
+                "type": "bwf_extraction",
+                "source_video": request.output_path,
+                "sample_rate": 48000
+            });
+            
+            let bwf_job = job::Job::new(
+                request.input_path,
+                bwf_output,
+                bwf_config,
+                request.priority.unwrap_or(job::Priority::Normal),
+            );
+            
+            state.queue.add_job(bwf_job).await.map_err(|e| e.to_string())?;
+        }
 
-    Ok(job_id)
+        Ok(job_id)
+    } else {
+        // Original behavior without BWF
+        let config_json = serde_json::to_value(&config).map_err(|e| e.to_string())?;
+        let job = job::Job::new(
+            request.input_path,
+            request.output_path,
+            config_json,
+            request.priority.unwrap_or(job::Priority::Normal),
+        );
+
+        // Add to queue
+        let job_id = state.queue.add_job(job).await.map_err(|e| e.to_string())?;
+
+        Ok(job_id)
+    }
 }
 
 /// Get a job by ID

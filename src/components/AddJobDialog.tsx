@@ -18,6 +18,7 @@ export const AddJobDialog: React.FC<AddJobDialogProps> = ({ onClose, onJobAdded 
   const [outputFilename, setOutputFilename] = useState('');
   const [presetName, setPresetName] = useState('DNxHR LB (Fast)');  // Changed to fast preset
   const [priority, setPriority] = useState<Priority>('Normal');
+  const [createBwf, setCreateBwf] = useState(false);
   const [presets, setPresets] = useState<Record<string, CodecPreset>>({});
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -91,6 +92,7 @@ export const AddJobDialog: React.FC<AddJobDialogProps> = ({ onClose, onJobAdded 
         output_path: outputPath,
         preset_name: presetName,
         priority,
+        create_bwf: createBwf,
       });
 
       onJobAdded();
@@ -224,6 +226,24 @@ export const AddJobDialog: React.FC<AddJobDialogProps> = ({ onClose, onJobAdded 
                 </div>
               </div>
             )}
+          </div>
+
+          {/* BWF Audio Option */}
+          <div>
+            <label className="flex items-center cursor-pointer p-4 bg-gray-900 rounded-lg border-2 border-gray-700 hover:border-purple-500 transition-colors">
+              <input
+                type="checkbox"
+                checked={createBwf}
+                onChange={(e) => setCreateBwf(e.target.checked)}
+                className="w-5 h-5 rounded bg-gray-900 border-gray-600 text-purple-600 focus:ring-2 focus:ring-purple-500 cursor-pointer"
+              />
+              <div className="ml-4 flex-1">
+                <div className="font-semibold">Also Create BWF Audio (WAV)</div>
+                <div className="text-sm text-gray-400 mt-1">
+                  Frame-accurate BEXT timecode • 48kHz 24-bit • Stereo mixdown • Auto-extracted from video
+                </div>
+              </div>
+            </label>
           </div>
 
           {/* Priority */}

@@ -64,6 +64,7 @@ export interface AddJobRequest {
   output_path: string;
   preset_name: string;
   priority?: Priority;
+  create_bwf?: boolean;
 }
 
 export interface QueueStats {
