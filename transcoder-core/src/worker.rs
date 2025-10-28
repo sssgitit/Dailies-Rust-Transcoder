@@ -364,11 +364,19 @@ impl WorkerPool {
             info!("Calculated TimeReference: {} for timecode: {}", time_reference, timecode);
             
             // Try to insert BEXT using Python script
-            let script_path = std::env::current_dir()
-                .unwrap_or_else(|_| std::path::PathBuf::from("."))
-                .join("bwf-tools/insert_bext_timecode.py");
+            // Try multiple possible locations for the script
+            let possible_paths = vec![
+                std::path::PathBuf::from("bwf-tools/insert_bext_timecode.py"),
+                std::path::PathBuf::from("../bwf-tools/insert_bext_timecode.py"),
+                std::path::PathBuf::from("/Users/Editor/Downloads/industrial-transcoder-rust-v1_simple_attempt/bwf-tools/insert_bext_timecode.py"),
+            ];
+            
+            let script_path = possible_paths.into_iter()
+                .find(|p| p.exists())
+                .unwrap_or_else(|| std::path::PathBuf::from("bwf-tools/insert_bext_timecode.py"));
             
             if script_path.exists() {
+                info!("Found BEXT script at: {:?}", script_path);
                 let bext_result = Command::new("python3")
                     .args(&[
                         script_path.to_str().ok_or_else(|| TranscodeError::InvalidInput("Invalid script path".to_string()))?,
@@ -397,7 +405,7 @@ impl WorkerPool {
                 }
             } else {
                 // No script available, just rename
-                info!("BEXT script not found, creating plain WAV");
+                info!("BEXT script not found at {:?}, creating plain WAV", script_path);
                 std::fs::rename(&temp_wav, &job.output_path)?;
             }
         } else {
