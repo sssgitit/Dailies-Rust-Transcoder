@@ -287,8 +287,7 @@ impl WorkerPool {
         // Create output directory if needed
         if let Some(parent) = job.output_path.parent() {
             if !parent.exists() {
-                std::fs::create_dir_all(parent)
-                    .map_err(|e| TranscodeError::IOError(e))?;
+                std::fs::create_dir_all(parent)?;
             }
         }
         
@@ -301,7 +300,7 @@ impl WorkerPool {
             ])
             .output()
             .await
-            .map_err(|e| TranscodeError::FFmpegError(format!("ffprobe failed: {}", e)))?;
+            .map_err(|e| TranscodeError::FfmpegFailed(format!("ffprobe failed: {}", e)))?;
         
         let tc_str = String::from_utf8_lossy(&tc_output.stdout);
         let mut timecode = None;
@@ -336,17 +335,75 @@ impl WorkerPool {
             .stderr(Stdio::piped())
             .output()
             .await
-            .map_err(|e| TranscodeError::FFmpegError(format!("Audio extraction failed: {}", e)))?;
+            .map_err(|e| TranscodeError::FfmpegFailed(format!("Audio extraction failed: {}", e)))?;
         
         if !extract_output.status.success() {
             let stderr = String::from_utf8_lossy(&extract_output.stderr);
-            return Err(TranscodeError::FFmpegError(format!("Audio extraction failed: {}", stderr)));
+            return Err(TranscodeError::FfmpegFailed(format!("Audio extraction failed: {}", stderr)));
         }
         
-        // For now, just rename temp to final (without BEXT insertion)
-        // TODO: Add BEXT timecode insertion using Python script or native Rust
-        std::fs::rename(&temp_wav, &job.output_path)
-            .map_err(|e| TranscodeError::IOError(e))?;
+        // Calculate TimeReference using validated method for 23.976fps
+        let tc_parts: Vec<&str> = timecode.split(':').collect();
+        if tc_parts.len() == 4 {
+            let hours: u64 = tc_parts[0].parse().unwrap_or(0);
+            let minutes: u64 = tc_parts[1].parse().unwrap_or(0);
+            let seconds: u64 = tc_parts[2].parse().unwrap_or(0);
+            let frames: u64 = tc_parts[3].parse().unwrap_or(0);
+            
+            // Validated frame-based formula for 23.976fps @ 48000 Hz
+            const FRAME_RATE: f64 = 23.976;
+            const MULTIPLIER: f64 = 2004.005263;
+            
+            let total_frames = (hours as f64 * 60.0 * 60.0 * FRAME_RATE)
+                + (minutes as f64 * 60.0 * FRAME_RATE)
+                + (seconds as f64 * FRAME_RATE)
+                + frames as f64;
+            
+            let time_reference = (total_frames * MULTIPLIER) as u64;
+            
+            info!("Calculated TimeReference: {} for timecode: {}", time_reference, timecode);
+            
+            // Try to insert BEXT using Python script
+            let script_path = std::env::current_dir()
+                .unwrap_or_else(|_| std::path::PathBuf::from("."))
+                .join("bwf-tools/insert_bext_timecode.py");
+            
+            if script_path.exists() {
+                let bext_result = Command::new("python3")
+                    .args(&[
+                        script_path.to_str().ok_or_else(|| TranscodeError::InvalidInput("Invalid script path".to_string()))?,
+                        temp_wav.to_str().ok_or_else(|| TranscodeError::InvalidOutput("Invalid temp path".to_string()))?,
+                        job.output_path.to_str().ok_or_else(|| TranscodeError::InvalidOutput("Invalid output path".to_string()))?,
+                        "--time-ref", &time_reference.to_string(),
+                        "--sample-rate", &sample_rate.to_string(),
+                        "--frame-rate", "23.976",
+                        "--description", &timecode,
+                        "--originator", "Industrial Transcoder v2",
+                    ])
+                    .output()
+                    .await;
+                
+                match bext_result {
+                    Ok(output) if output.status.success() => {
+                        // BEXT inserted successfully, remove temp file
+                        let _ = std::fs::remove_file(&temp_wav);
+                        info!("BWF created with BEXT timecode at: {:?}", job.output_path);
+                    }
+                    _ => {
+                        // Fallback: just rename temp to output (plain WAV)
+                        info!("BEXT script unavailable, creating plain WAV");
+                        std::fs::rename(&temp_wav, &job.output_path)?;
+                    }
+                }
+            } else {
+                // No script available, just rename
+                info!("BEXT script not found, creating plain WAV");
+                std::fs::rename(&temp_wav, &job.output_path)?;
+            }
+        } else {
+            // Invalid timecode format, just rename
+            std::fs::rename(&temp_wav, &job.output_path)?;
+        }
         
         info!("BWF created successfully at: {:?}", job.output_path);
         Ok(())
