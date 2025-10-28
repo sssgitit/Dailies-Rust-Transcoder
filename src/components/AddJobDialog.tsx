@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { open } from '@tauri-apps/api/dialog';
-import { addJob, getPresets, CodecPreset, Priority } from '../api/transcoder-api';
+import { addJob, getPresets, CodecPreset, Priority, NamingMode } from '../api/transcoder-api';
 
 interface AddJobDialogProps {
   onClose: () => void;
@@ -22,6 +22,16 @@ export const AddJobDialog: React.FC<AddJobDialogProps> = ({ onClose, onJobAdded 
   const [presets, setPresets] = useState<Record<string, CodecPreset>>({});
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  
+  // Naming options
+  const [namingMode, setNamingMode] = useState<NamingMode>('source');
+  const [customName, setCustomName] = useState<string>('');
+  const [namePrefix, setNamePrefix] = useState<string>('');
+  const [nameSuffix, setNameSuffix] = useState<string>('_transcoded');
+  
+  // Separate folder options
+  const [videoOutputFolder, setVideoOutputFolder] = useState<string>('');
+  const [bwfOutputFolder, setBwfOutputFolder] = useState<string>('');
 
   useEffect(() => {
     getPresets()
@@ -78,6 +88,36 @@ export const AddJobDialog: React.FC<AddJobDialogProps> = ({ onClose, onJobAdded 
     }
   };
 
+  const handleSelectVideoFolder = async () => {
+    try {
+      const selected = await open({
+        directory: true,
+        multiple: false,
+      });
+
+      if (selected && typeof selected === 'string') {
+        setVideoOutputFolder(selected);
+      }
+    } catch (err) {
+      setError(`Failed to select video folder: ${err}`);
+    }
+  };
+
+  const handleSelectBwfFolder = async () => {
+    try {
+      const selected = await open({
+        directory: true,
+        multiple: false,
+      });
+
+      if (selected && typeof selected === 'string') {
+        setBwfOutputFolder(selected);
+      }
+    } catch (err) {
+      setError(`Failed to select BWF folder: ${err}`);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -93,6 +133,12 @@ export const AddJobDialog: React.FC<AddJobDialogProps> = ({ onClose, onJobAdded 
         preset_name: presetName,
         priority,
         create_bwf: createBwf,
+        naming_mode: namingMode,
+        custom_name: customName || undefined,
+        name_prefix: namePrefix || undefined,
+        name_suffix: nameSuffix || undefined,
+        video_output_folder: videoOutputFolder || undefined,
+        bwf_output_folder: bwfOutputFolder || undefined,
       });
 
       onJobAdded();
@@ -183,6 +229,159 @@ export const AddJobDialog: React.FC<AddJobDialogProps> = ({ onClose, onJobAdded 
             <p className="mt-1 text-xs text-gray-500">
               Full path: {outputDir}/{outputFilename}
             </p>
+          </div>
+
+          {/* Naming Options */}
+          <div>
+            <label className="block text-sm font-semibold mb-2">Output File Naming</label>
+            <div className="grid grid-cols-2 gap-2 mb-3">
+              <button
+                type="button"
+                onClick={() => setNamingMode('source')}
+                className={`py-2 px-4 rounded font-semibold transition-colors ${
+                  namingMode === 'source'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-700 hover:bg-gray-600 text-gray-300'
+                }`}
+              >
+                Source Name
+              </button>
+              <button
+                type="button"
+                onClick={() => setNamingMode('custom')}
+                className={`py-2 px-4 rounded font-semibold transition-colors ${
+                  namingMode === 'custom'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-700 hover:bg-gray-600 text-gray-300'
+                }`}
+              >
+                Custom Name
+              </button>
+              <button
+                type="button"
+                onClick={() => setNamingMode('prefix')}
+                className={`py-2 px-4 rounded font-semibold transition-colors ${
+                  namingMode === 'prefix'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-700 hover:bg-gray-600 text-gray-300'
+                }`}
+              >
+                Add Prefix
+              </button>
+              <button
+                type="button"
+                onClick={() => setNamingMode('suffix')}
+                className={`py-2 px-4 rounded font-semibold transition-colors ${
+                  namingMode === 'suffix'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-700 hover:bg-gray-600 text-gray-300'
+                }`}
+              >
+                Add Suffix
+              </button>
+            </div>
+
+            {namingMode === 'custom' && (
+              <input
+                type="text"
+                value={customName}
+                onChange={(e) => setCustomName(e.target.value)}
+                placeholder="Enter custom name..."
+                className="w-full bg-gray-900 border border-gray-600 rounded px-4 py-2 text-white focus:outline-none focus:border-blue-500"
+              />
+            )}
+
+            {namingMode === 'prefix' && (
+              <input
+                type="text"
+                value={namePrefix}
+                onChange={(e) => setNamePrefix(e.target.value)}
+                placeholder="e.g., PROJ_"
+                className="w-full bg-gray-900 border border-gray-600 rounded px-4 py-2 text-white focus:outline-none focus:border-blue-500"
+              />
+            )}
+
+            {namingMode === 'suffix' && (
+              <input
+                type="text"
+                value={nameSuffix}
+                onChange={(e) => setNameSuffix(e.target.value)}
+                placeholder="e.g., _transcoded"
+                className="w-full bg-gray-900 border border-gray-600 rounded px-4 py-2 text-white focus:outline-none focus:border-blue-500"
+              />
+            )}
+          </div>
+
+          {/* Separate Output Folders */}
+          <div>
+            <label className="block text-sm font-semibold mb-2">Separate Output Folders (Optional)</label>
+            <p className="text-xs text-gray-500 mb-3">Override output directory for specific file types</p>
+            
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">Video Files</label>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={handleSelectVideoFolder}
+                    className="px-3 py-2 bg-gray-700 hover:bg-gray-600 rounded font-semibold transition-colors text-sm"
+                  >
+                    📁 Select
+                  </button>
+                  {videoOutputFolder ? (
+                    <>
+                      <div className="flex-1 px-3 py-2 bg-gray-900 rounded border border-gray-700 truncate text-sm">
+                        {videoOutputFolder}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setVideoOutputFolder('')}
+                        className="px-3 py-2 bg-red-700 hover:bg-red-600 rounded transition-colors text-sm"
+                      >
+                        ✕
+                      </button>
+                    </>
+                  ) : (
+                    <div className="flex-1 px-3 py-2 bg-gray-900 rounded border border-gray-700 text-gray-500 text-sm">
+                      Using main output directory
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {createBwf && (
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1">BWF Audio Files</label>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={handleSelectBwfFolder}
+                      className="px-3 py-2 bg-gray-700 hover:bg-gray-600 rounded font-semibold transition-colors text-sm"
+                    >
+                      📁 Select
+                    </button>
+                    {bwfOutputFolder ? (
+                      <>
+                        <div className="flex-1 px-3 py-2 bg-gray-900 rounded border border-gray-700 truncate text-sm">
+                          {bwfOutputFolder}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setBwfOutputFolder('')}
+                          className="px-3 py-2 bg-red-700 hover:bg-red-600 rounded transition-colors text-sm"
+                        >
+                          ✕
+                        </button>
+                      </>
+                    ) : (
+                      <div className="flex-1 px-3 py-2 bg-gray-900 rounded border border-gray-700 text-gray-500 text-sm">
+                        Using video output folder
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Preset Selection */}

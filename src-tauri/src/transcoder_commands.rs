@@ -52,6 +52,16 @@ pub fn get_presets() -> HashMap<String, config::CodecPreset> {
     config::CodecPreset::all_presets()
 }
 
+/// Naming mode for output files
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum NamingMode {
+    Source,
+    Custom,
+    Prefix,
+    Suffix,
+}
+
 /// Job creation request
 #[derive(Debug, Deserialize)]
 pub struct AddJobRequest {
@@ -60,6 +70,42 @@ pub struct AddJobRequest {
     pub preset_name: String,
     pub priority: Option<job::Priority>,
     pub create_bwf: Option<bool>,
+    pub naming_mode: Option<NamingMode>,
+    pub custom_name: Option<String>,
+    pub name_prefix: Option<String>,
+    pub name_suffix: Option<String>,
+    pub video_output_folder: Option<PathBuf>,
+    pub bwf_output_folder: Option<PathBuf>,
+}
+
+/// Generate output file name based on naming mode
+fn generate_output_name(
+    input_path: &PathBuf,
+    naming_mode: &Option<NamingMode>,
+    custom_name: &Option<String>,
+    name_prefix: &Option<String>,
+    name_suffix: &Option<String>,
+) -> String {
+    let source_stem = input_path.file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("output");
+    
+    match naming_mode {
+        Some(NamingMode::Custom) => {
+            custom_name.clone().unwrap_or_else(|| source_stem.to_string())
+        },
+        Some(NamingMode::Prefix) => {
+            let prefix = name_prefix.as_deref().unwrap_or("");
+            format!("{}{}", prefix, source_stem)
+        },
+        Some(NamingMode::Suffix) => {
+            let suffix = name_suffix.as_deref().unwrap_or("");
+            format!("{}{}", source_stem, suffix)
+        },
+        Some(NamingMode::Source) | None => {
+            source_stem.to_string()
+        },
+    }
 }
 
 /// Add a new job to the queue
@@ -74,6 +120,34 @@ pub async fn add_job(
         .get(&request.preset_name)
         .ok_or_else(|| format!("Unknown preset: {}", request.preset_name))?;
 
+    // Generate output name based on naming mode
+    let output_name = generate_output_name(
+        &request.input_path,
+        &request.naming_mode,
+        &request.custom_name,
+        &request.name_prefix,
+        &request.name_suffix,
+    );
+
+    // Determine video output folder (use custom folder or original output_path directory)
+    let video_folder = request.video_output_folder.clone()
+        .unwrap_or_else(|| {
+            request.output_path.parent()
+                .map(|p| p.to_path_buf())
+                .unwrap_or_else(|| PathBuf::from("."))
+        });
+    
+    // Create video output path
+    let video_extension = request.output_path.extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("mov");
+    let final_video_output = video_folder.join(format!("{}.{}", output_name, video_extension));
+
+    // Create output directory if it doesn't exist
+    if let Some(parent) = final_video_output.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+
     // Create job config with BWF option
     let mut config = preset.config.clone();
     if let Some(create_bwf) = request.create_bwf {
@@ -85,7 +159,7 @@ pub async fn add_job(
         
         let job = job::Job::new(
             request.input_path.clone(),
-            request.output_path.clone(),
+            final_video_output.clone(),
             config_value,
             request.priority.unwrap_or(job::Priority::Normal),
         );
@@ -95,13 +169,22 @@ pub async fn add_job(
         
         // If BWF is requested, add a separate BWF job after the video job
         if create_bwf {
-            // Create BWF output path (replace extension with .wav)
-            let bwf_output = request.output_path.with_extension("wav");
+            // Determine BWF output folder (use custom folder or video folder)
+            let bwf_folder = request.bwf_output_folder.clone()
+                .unwrap_or_else(|| video_folder.clone());
+            
+            // Create BWF output path with same name as video but .wav extension
+            let bwf_output = bwf_folder.join(format!("{}.wav", output_name));
+            
+            // Create BWF output directory if it doesn't exist
+            if let Some(parent) = bwf_output.parent() {
+                std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+            }
             
             // Create a simple config for BWF extraction
             let bwf_config = serde_json::json!({
                 "type": "bwf_extraction",
-                "source_video": request.output_path,
+                "source_video": final_video_output,
                 "sample_rate": 48000
             });
             
@@ -121,7 +204,7 @@ pub async fn add_job(
         let config_json = serde_json::to_value(&config).map_err(|e| e.to_string())?;
         let job = job::Job::new(
             request.input_path,
-            request.output_path,
+            final_video_output,
             config_json,
             request.priority.unwrap_or(job::Priority::Normal),
         );

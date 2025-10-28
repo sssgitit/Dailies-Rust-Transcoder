@@ -59,12 +59,20 @@ export interface Job {
   config: any;
 }
 
+export type NamingMode = 'source' | 'custom' | 'prefix' | 'suffix';
+
 export interface AddJobRequest {
   input_path: string;
   output_path: string;
   preset_name: string;
   priority?: Priority;
   create_bwf?: boolean;
+  naming_mode?: NamingMode;
+  custom_name?: string;
+  name_prefix?: string;
+  name_suffix?: string;
+  video_output_folder?: string;
+  bwf_output_folder?: string;
 }
 
 export interface QueueStats {

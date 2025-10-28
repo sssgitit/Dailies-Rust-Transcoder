@@ -9,6 +9,8 @@ interface TranscodeJob {
   createBwf: boolean;
 }
 
+type NamingMode = 'source' | 'custom' | 'prefix' | 'suffix';
+
 export const SimpleTranscoder: React.FC = () => {
   const [inputFiles, setInputFiles] = useState<string[]>([]);
   const [outputDir, setOutputDir] = useState<string>('');
@@ -19,6 +21,16 @@ export const SimpleTranscoder: React.FC = () => {
   const [currentFileIndex, setCurrentFileIndex] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  
+  // Naming options
+  const [namingMode, setNamingMode] = useState<NamingMode>('source');
+  const [customName, setCustomName] = useState<string>('');
+  const [namePrefix, setNamePrefix] = useState<string>('');
+  const [nameSuffix, setNameSuffix] = useState<string>('_transcoded');
+  
+  // Separate folder options
+  const [videoOutputFolder, setVideoOutputFolder] = useState<string>('');
+  const [bwfOutputFolder, setBwfOutputFolder] = useState<string>('');
 
   const handleSelectInput = async () => {
     try {
@@ -63,6 +75,38 @@ export const SimpleTranscoder: React.FC = () => {
     }
   };
 
+  const handleSelectVideoFolder = async () => {
+    try {
+      const selected = await open({
+        directory: true,
+        multiple: false,
+      });
+
+      if (selected && typeof selected === 'string') {
+        setVideoOutputFolder(selected);
+        setError(null);
+      }
+    } catch (err) {
+      setError(`Failed to select video folder: ${err}`);
+    }
+  };
+
+  const handleSelectBwfFolder = async () => {
+    try {
+      const selected = await open({
+        directory: true,
+        multiple: false,
+      });
+
+      if (selected && typeof selected === 'string') {
+        setBwfOutputFolder(selected);
+        setError(null);
+      }
+    } catch (err) {
+      setError(`Failed to select BWF folder: ${err}`);
+    }
+  };
+
   const handleProcess = async () => {
     if (inputFiles.length === 0 || !outputDir) {
       setError('Please select input files and output directory');
@@ -87,7 +131,26 @@ export const SimpleTranscoder: React.FC = () => {
         setCurrentFile(inputFile);
         setCurrentFileIndex(i + 1);
 
-        const basename = inputFile.split('/').pop()?.replace(/\.[^/.]+$/, '') || 'output';
+        const sourceBasename = inputFile.split('/').pop()?.replace(/\.[^/.]+$/, '') || 'output';
+        
+        // Generate output name based on naming mode
+        let outputName: string;
+        switch (namingMode) {
+          case 'custom':
+            outputName = customName || sourceBasename;
+            break;
+          case 'prefix':
+            outputName = `${namePrefix}${sourceBasename}`;
+            break;
+          case 'suffix':
+            outputName = `${sourceBasename}${nameSuffix}`;
+            break;
+          case 'source':
+          default:
+            outputName = sourceBasename;
+            break;
+        }
+        
         const fileResults: string[] = [];
 
         // Start both processes for this file
@@ -96,14 +159,15 @@ export const SimpleTranscoder: React.FC = () => {
         // Video transcode (DNxHR LB MOV)
         if (createVideo) {
           const videoPromise = (async () => {
-            const videoOutput = `${outputDir}/${basename}_transcoded.mov`;
+            const videoFolder = videoOutputFolder || outputDir;
+            const videoOutput = `${videoFolder}/${outputName}.mov`;
             
             await invoke('transcode_dnxhr_lb', {
               inputPath: inputFile,
               outputPath: videoOutput,
             });
             
-            fileResults.push(`✅ Video: ${basename}_transcoded.mov`);
+            fileResults.push(`✅ Video: ${outputName}.mov`);
           })();
           
           promises.push(videoPromise);
@@ -112,7 +176,8 @@ export const SimpleTranscoder: React.FC = () => {
         // BWF audio extraction
         if (createBwf) {
           const bwfPromise = (async () => {
-            const bwfOutput = `${outputDir}/${basename}_audio.wav`;
+            const bwfFolder = bwfOutputFolder || outputDir;
+            const bwfOutput = `${bwfFolder}/${outputName}.wav`;
             
             await invoke('create_bwf_from_mxf', {
               mxfPath: inputFile,
@@ -120,7 +185,7 @@ export const SimpleTranscoder: React.FC = () => {
               sampleRate: 48000,
             });
             
-            fileResults.push(`✅ BWF Audio: ${basename}_audio.wav`);
+            fileResults.push(`✅ BWF Audio: ${outputName}.wav`);
           })();
           
           promises.push(bwfPromise);
@@ -129,7 +194,7 @@ export const SimpleTranscoder: React.FC = () => {
         // Wait for this file to complete
         await Promise.all(promises);
         
-        allResults.push(`\n📁 ${basename}:\n${fileResults.join('\n')}`);
+        allResults.push(`\n📁 ${outputName}:\n${fileResults.join('\n')}`);
       }
 
       setSuccess(`✅ Processed ${inputFiles.length} file(s):\n${allResults.join('\n')}`);
@@ -192,6 +257,151 @@ export const SimpleTranscoder: React.FC = () => {
                 {outputDir}
               </div>
             )}
+          </div>
+        </div>
+      </div>
+
+      {/* Naming Options */}
+      <div className="mb-8">
+        <label className="block text-sm font-semibold mb-4">Output File Naming</label>
+        <div className="space-y-4">
+          <div className="flex gap-2 flex-wrap">
+            <button
+              onClick={() => setNamingMode('source')}
+              className={`px-4 py-2 rounded-lg font-semibold transition-colors ${
+                namingMode === 'source'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+              }`}
+            >
+              Source Name
+            </button>
+            <button
+              onClick={() => setNamingMode('custom')}
+              className={`px-4 py-2 rounded-lg font-semibold transition-colors ${
+                namingMode === 'custom'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+              }`}
+            >
+              Custom Name
+            </button>
+            <button
+              onClick={() => setNamingMode('prefix')}
+              className={`px-4 py-2 rounded-lg font-semibold transition-colors ${
+                namingMode === 'prefix'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+              }`}
+            >
+              Add Prefix
+            </button>
+            <button
+              onClick={() => setNamingMode('suffix')}
+              className={`px-4 py-2 rounded-lg font-semibold transition-colors ${
+                namingMode === 'suffix'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+              }`}
+            >
+              Add Suffix
+            </button>
+          </div>
+
+          {namingMode === 'custom' && (
+            <div>
+              <label className="block text-xs text-gray-400 mb-2">Custom Name (for all files)</label>
+              <input
+                type="text"
+                value={customName}
+                onChange={(e) => setCustomName(e.target.value)}
+                placeholder="Enter custom name..."
+                className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg focus:outline-none focus:border-blue-500"
+              />
+            </div>
+          )}
+
+          {namingMode === 'prefix' && (
+            <div>
+              <label className="block text-xs text-gray-400 mb-2">Prefix</label>
+              <input
+                type="text"
+                value={namePrefix}
+                onChange={(e) => setNamePrefix(e.target.value)}
+                placeholder="e.g., PROJ_"
+                className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg focus:outline-none focus:border-blue-500"
+              />
+            </div>
+          )}
+
+          {namingMode === 'suffix' && (
+            <div>
+              <label className="block text-xs text-gray-400 mb-2">Suffix</label>
+              <input
+                type="text"
+                value={nameSuffix}
+                onChange={(e) => setNameSuffix(e.target.value)}
+                placeholder="e.g., _transcoded"
+                className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg focus:outline-none focus:border-blue-500"
+              />
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Output Folders (Optional) */}
+      <div className="mb-8">
+        <label className="block text-sm font-semibold mb-2">Separate Output Folders (Optional)</label>
+        <p className="text-xs text-gray-400 mb-4">Leave blank to use main output directory</p>
+        <div className="space-y-3">
+          <div>
+            <label className="block text-xs text-gray-400 mb-2">Video Files (.mov)</label>
+            <div className="flex gap-2">
+              <button
+                onClick={handleSelectVideoFolder}
+                className="px-4 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-600 font-semibold transition-colors"
+              >
+                📁 Select Folder
+              </button>
+              {videoOutputFolder && (
+                <div className="flex-1 px-4 py-2 bg-gray-800 rounded-lg border border-gray-700 truncate text-sm">
+                  {videoOutputFolder}
+                </div>
+              )}
+              {videoOutputFolder && (
+                <button
+                  onClick={() => setVideoOutputFolder('')}
+                  className="px-4 py-2 bg-red-700 text-white rounded-lg hover:bg-red-600 transition-colors"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs text-gray-400 mb-2">BWF Audio Files (.wav)</label>
+            <div className="flex gap-2">
+              <button
+                onClick={handleSelectBwfFolder}
+                className="px-4 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-600 font-semibold transition-colors"
+              >
+                📁 Select Folder
+              </button>
+              {bwfOutputFolder && (
+                <div className="flex-1 px-4 py-2 bg-gray-800 rounded-lg border border-gray-700 truncate text-sm">
+                  {bwfOutputFolder}
+                </div>
+              )}
+              {bwfOutputFolder && (
+                <button
+                  onClick={() => setBwfOutputFolder('')}
+                  className="px-4 py-2 bg-red-700 text-white rounded-lg hover:bg-red-600 transition-colors"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
           </div>
         </div>
       </div>
