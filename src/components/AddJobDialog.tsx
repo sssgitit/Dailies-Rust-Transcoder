@@ -13,7 +13,7 @@ interface AddJobDialogProps {
 }
 
 export const AddJobDialog: React.FC<AddJobDialogProps> = ({ onClose, onJobAdded }) => {
-  const [inputPath, setInputPath] = useState('');
+  const [inputPaths, setInputPaths] = useState<string[]>([]);
   const [outputDir, setOutputDir] = useState('');
   const [outputFilename, setOutputFilename] = useState('');
   const [presetName, setPresetName] = useState('DNxHR LB (Fast)');  // Changed to fast preset
@@ -42,7 +42,7 @@ export const AddJobDialog: React.FC<AddJobDialogProps> = ({ onClose, onJobAdded 
   const handleSelectInput = async () => {
     try {
       const selected = await open({
-        multiple: false,
+        multiple: true,  // Enable multiple file selection
         filters: [
           {
             name: 'Media Files',
@@ -51,25 +51,19 @@ export const AddJobDialog: React.FC<AddJobDialogProps> = ({ onClose, onJobAdded 
         ],
       });
 
-      if (selected && typeof selected === 'string') {
-        setInputPath(selected);
+      if (selected) {
+        // Handle both single file (string) and multiple files (array)
+        const files = Array.isArray(selected) ? selected : [selected];
+        setInputPaths(files);
         
-        // Auto-generate output filename and directory
-        if (!outputFilename) {
-          const basename = selected.split('/').pop() || 'output';
-          const ext = presets[presetName]?.config.container || 'mov';
-          const newFilename = basename.replace(/\.[^/.]+$/, `_transcoded.${ext}`);
-          setOutputFilename(newFilename);
-        }
-        
-        // Auto-set output directory to input directory
-        if (!outputDir) {
-          const dir = selected.substring(0, selected.lastIndexOf('/'));
+        // Auto-set output directory to first file's directory
+        if (!outputDir && files.length > 0) {
+          const dir = files[0].substring(0, files[0].lastIndexOf('/'));
           setOutputDir(dir);
         }
       }
     } catch (err) {
-      setError(`Failed to select file: ${err}`);
+      setError(`Failed to select files: ${err}`);
     }
   };
 
@@ -124,26 +118,32 @@ export const AddJobDialog: React.FC<AddJobDialogProps> = ({ onClose, onJobAdded 
     setLoading(true);
 
     try {
-      // Construct full output path
-      const outputPath = `${outputDir}/${outputFilename}`;
-      
-      await addJob({
-        input_path: inputPath,
-        output_path: outputPath,
-        preset_name: presetName,
-        priority,
-        create_bwf: createBwf,
-        naming_mode: namingMode,
-        custom_name: customName || undefined,
-        name_prefix: namePrefix || undefined,
-        name_suffix: nameSuffix || undefined,
-        video_output_folder: videoOutputFolder || undefined,
-        bwf_output_folder: bwfOutputFolder || undefined,
-      });
+      // Add a job for each selected file
+      for (const inputPath of inputPaths) {
+        // Get extension from preset
+        const ext = presets[presetName]?.config.container || 'mov';
+        
+        // Use the first file's directory or the selected outputDir as base
+        const baseOutputPath = `${outputDir}/output.${ext}`;
+        
+        await addJob({
+          input_path: inputPath,
+          output_path: baseOutputPath,  // Backend will use naming_mode to generate actual name
+          preset_name: presetName,
+          priority,
+          create_bwf: createBwf,
+          naming_mode: namingMode,
+          custom_name: customName || undefined,
+          name_prefix: namePrefix || undefined,
+          name_suffix: nameSuffix || undefined,
+          video_output_folder: videoOutputFolder || undefined,
+          bwf_output_folder: bwfOutputFolder || undefined,
+        });
+      }
 
       onJobAdded();
     } catch (err) {
-      setError(`Failed to add job: ${err}`);
+      setError(`Failed to add jobs: ${err}`);
     } finally {
       setLoading(false);
     }
@@ -171,31 +171,44 @@ export const AddJobDialog: React.FC<AddJobDialogProps> = ({ onClose, onJobAdded 
         )}
 
         <form onSubmit={handleSubmit} className="space-y-6">
-          {/* Input File */}
+          {/* Input Files */}
           <div>
-            <label className="block text-sm font-semibold mb-2">Input File</label>
+            <label className="block text-sm font-semibold mb-2">Input Files</label>
             <div className="flex gap-2">
-              <input
-                type="text"
-                value={inputPath}
-                onChange={(e) => setInputPath(e.target.value)}
-                placeholder="/path/to/input.mxf"
-                className="flex-1 bg-gray-900 border border-gray-600 rounded px-4 py-2 text-white focus:outline-none focus:border-blue-500"
-                required
-              />
               <button
                 type="button"
                 onClick={handleSelectInput}
-                className="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded font-semibold transition-colors"
+                className="bg-blue-600 hover:bg-blue-700 px-6 py-3 rounded font-semibold transition-colors"
               >
-                Browse
+                📁 Select Files
               </button>
+              {inputPaths.length > 0 && (
+                <div className="flex-1 px-4 py-3 bg-gray-900 rounded border border-gray-600">
+                  <div className="text-sm font-semibold text-blue-400 mb-2">
+                    {inputPaths.length} file(s) selected
+                  </div>
+                  <div className="max-h-24 overflow-y-auto space-y-1">
+                    {inputPaths.map((file, idx) => (
+                      <div key={idx} className="text-xs text-gray-400 truncate flex items-center gap-2">
+                        <span className="text-gray-500">{idx + 1}.</span>
+                        <span className="truncate">{file.split('/').pop()}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
+            {inputPaths.length === 0 && (
+              <p className="mt-2 text-xs text-gray-500">
+                Cmd+Click to select multiple files
+              </p>
+            )}
           </div>
 
           {/* Output Directory */}
           <div>
-            <label className="block text-sm font-semibold mb-2">Output Directory</label>
+            <label className="block text-sm font-semibold mb-2">Output Directory (Default)</label>
+            <p className="text-xs text-gray-500 mb-2">Can be overridden per file type below</p>
             <div className="flex gap-2">
               <input
                 type="text"
@@ -213,22 +226,6 @@ export const AddJobDialog: React.FC<AddJobDialogProps> = ({ onClose, onJobAdded 
                 Browse
               </button>
             </div>
-          </div>
-
-          {/* Output Filename */}
-          <div>
-            <label className="block text-sm font-semibold mb-2">Output Filename</label>
-            <input
-              type="text"
-              value={outputFilename}
-              onChange={(e) => setOutputFilename(e.target.value)}
-              placeholder="output.mov"
-              className="w-full bg-gray-900 border border-gray-600 rounded px-4 py-2 text-white focus:outline-none focus:border-blue-500"
-              required
-            />
-            <p className="mt-1 text-xs text-gray-500">
-              Full path: {outputDir}/{outputFilename}
-            </p>
           </div>
 
           {/* Naming Options */}
@@ -470,10 +467,12 @@ export const AddJobDialog: React.FC<AddJobDialogProps> = ({ onClose, onJobAdded 
           <div className="flex gap-4 pt-4">
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || inputPaths.length === 0}
               className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed px-6 py-3 rounded-lg font-semibold transition-colors"
             >
-              {loading ? 'Adding Job...' : 'Add Job'}
+              {loading 
+                ? `Adding ${inputPaths.length} Job(s)...` 
+                : `➕ Add ${inputPaths.length} Job${inputPaths.length !== 1 ? 's' : ''} to Queue`}
             </button>
             <button
               type="button"

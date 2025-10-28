@@ -32,6 +32,7 @@ export const TranscoderDashboard: React.FC = () => {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [workerCount, setWorkerCount] = useState<number>(3); // Default to 3 for optimal disk I/O
 
   // Load system info
   useEffect(() => {
@@ -91,7 +92,7 @@ export const TranscoderDashboard: React.FC = () => {
       if (workerStatus?.is_running) {
         await stopWorkers();
       } else {
-        await startWorkers();
+        await startWorkers(workerCount);
       }
       await refreshData();
     } catch (err) {
@@ -231,6 +232,40 @@ export const TranscoderDashboard: React.FC = () => {
                   </span>
                 </div>
               </div>
+              
+              {!workerStatus.is_running && (
+                <div className="mb-4">
+                  <label className="block text-xs text-gray-400 mb-2">
+                    Max Simultaneous Transcodes
+                  </label>
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="range"
+                      min="1"
+                      max={systemInfo?.cpu_cores || 12}
+                      value={workerCount}
+                      onChange={(e) => setWorkerCount(Number(e.target.value))}
+                      className="flex-1 h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+                      style={{
+                        accentColor: '#3b82f6',
+                      }}
+                    />
+                    <span className="text-xl font-bold w-10 text-center text-blue-400">
+                      {workerCount}
+                    </span>
+                  </div>
+                  <div className="mt-2 text-xs text-gray-500">
+                    {workerCount <= 3 ? (
+                      <span className="text-green-400">✓ Recommended for media (optimal disk I/O)</span>
+                    ) : workerCount <= 6 ? (
+                      <span className="text-yellow-400">⚠ May cause disk bottleneck</span>
+                    ) : (
+                      <span className="text-orange-400">⚠ High disk I/O - monitor performance</span>
+                    )}
+                  </div>
+                </div>
+              )}
+              
               <button
                 onClick={handleToggleWorkers}
                 className={`w-full py-2 px-4 rounded-lg font-semibold transition-colors ${
@@ -239,7 +274,7 @@ export const TranscoderDashboard: React.FC = () => {
                     : 'bg-green-600 hover:bg-green-700'
                 }`}
               >
-                {workerStatus.is_running ? 'Stop Workers' : 'Start Workers'}
+                {workerStatus.is_running ? 'Stop Workers' : `Start ${workerCount} Worker${workerCount !== 1 ? 's' : ''}`}
               </button>
             </>
           )}
