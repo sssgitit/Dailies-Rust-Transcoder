@@ -184,42 +184,54 @@ impl WorkerPool {
             output_path: job.output_path.to_string_lossy().to_string(),
         });
 
-        // Parse config
-        let config: TranscodeConfig = match serde_json::from_value(job.config.clone()) {
-            Ok(cfg) => cfg,
-            Err(e) => {
-                error!("Invalid job config: {}", e);
-                job.fail(format!("Invalid configuration: {}", e));
-                let _ = queue.update_job(job.clone());
-                progress_reporter.report(ProgressEvent::JobFailed {
-                    job_id,
-                    error: e.to_string(),
-                });
-                return;
-            }
-        };
+        // Check if this is a BWF extraction job
+        let is_bwf_job = job.config.get("type")
+            .and_then(|v| v.as_str())
+            .map(|s| s == "bwf_extraction")
+            .unwrap_or(false);
 
-        // Create progress callback
-        let progress_reporter_clone = progress_reporter.clone();
-        let progress_callback = move |progress: f32, fps: Option<f32>| {
-            progress_reporter_clone.report(ProgressEvent::JobProgress {
-                job_id,
-                progress,
-                fps,
-                eta_seconds: None, // TODO: Calculate ETA
-            });
-        };
-
-        // Execute transcode
         let start_time = std::time::Instant::now();
-        let result = transcoder
-            .transcode(
-                &job.input_path,
-                &job.output_path,
-                &config,
-                progress_callback,
-            )
-            .await;
+        let result = if is_bwf_job {
+            // Handle BWF extraction
+            info!("Processing BWF extraction job");
+            Self::process_bwf_job(&job, progress_reporter).await
+        } else {
+            // Parse config for normal transcode
+            let config: TranscodeConfig = match serde_json::from_value(job.config.clone()) {
+                Ok(cfg) => cfg,
+                Err(e) => {
+                    error!("Invalid job config: {}", e);
+                    job.fail(format!("Invalid configuration: {}", e));
+                    let _ = queue.update_job(job.clone());
+                    progress_reporter.report(ProgressEvent::JobFailed {
+                        job_id,
+                        error: e.to_string(),
+                    });
+                    return;
+                }
+            };
+
+            // Create progress callback
+            let progress_reporter_clone = progress_reporter.clone();
+            let progress_callback = move |progress: f32, fps: Option<f32>| {
+                progress_reporter_clone.report(ProgressEvent::JobProgress {
+                    job_id,
+                    progress,
+                    fps,
+                    eta_seconds: None, // TODO: Calculate ETA
+                });
+            };
+
+            // Execute transcode
+            transcoder
+                .transcode(
+                    &job.input_path,
+                    &job.output_path,
+                    &config,
+                    progress_callback,
+                )
+                .await
+        };
 
         let duration = start_time.elapsed();
 
@@ -251,6 +263,93 @@ impl WorkerPool {
         if let Err(e) = queue.update_job(job) {
             error!("Failed to update job status: {}", e);
         }
+    }
+
+    /// Process BWF extraction job
+    async fn process_bwf_job(
+        job: &crate::job::Job,
+        progress_reporter: &ProgressReporter,
+    ) -> TranscodeResult<()> {
+        use std::process::Stdio;
+        use tokio::process::Command;
+        
+        let sample_rate = job.config.get("sample_rate")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(48000) as u32;
+        
+        info!("Creating BWF from: {:?} -> {:?}", job.input_path, job.output_path);
+        
+        // Verify input exists
+        if !job.input_path.exists() {
+            return Err(TranscodeError::InvalidInput(format!("Input file does not exist: {:?}", job.input_path)));
+        }
+        
+        // Create output directory if needed
+        if let Some(parent) = job.output_path.parent() {
+            if !parent.exists() {
+                std::fs::create_dir_all(parent)
+                    .map_err(|e| TranscodeError::IOError(e))?;
+            }
+        }
+        
+        // Extract timecode from file using ffprobe
+        let tc_output = Command::new("ffprobe")
+            .args(&[
+                "-v", "quiet",
+                "-show_entries", "format_tags:stream_tags",
+                job.input_path.to_str().ok_or_else(|| TranscodeError::InvalidInput("Invalid input path".to_string()))?,
+            ])
+            .output()
+            .await
+            .map_err(|e| TranscodeError::FFmpegError(format!("ffprobe failed: {}", e)))?;
+        
+        let tc_str = String::from_utf8_lossy(&tc_output.stdout);
+        let mut timecode = None;
+        
+        for line in tc_str.lines() {
+            if line.contains("timecode=") {
+                if let Some(tc) = line.split('=').nth(1) {
+                    timecode = Some(tc.trim().to_string());
+                    break;
+                }
+            }
+        }
+        
+        let timecode = timecode.unwrap_or_else(|| "00:00:00:00".to_string());
+        info!("Extracted timecode: {}", timecode);
+        
+        // Create temporary WAV
+        let temp_wav = job.output_path.with_extension("temp.wav");
+        
+        let extract_output = Command::new("ffmpeg")
+            .args(&[
+                "-y",
+                "-i", job.input_path.to_str().ok_or_else(|| TranscodeError::InvalidInput("Invalid input path".to_string()))?,
+                "-vn",
+                "-acodec", "pcm_s24le",
+                "-ar", &sample_rate.to_string(),
+                "-ac", "2",
+                temp_wav.to_str().ok_or_else(|| TranscodeError::InvalidOutput("Invalid temp path".to_string()))?,
+            ])
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .await
+            .map_err(|e| TranscodeError::FFmpegError(format!("Audio extraction failed: {}", e)))?;
+        
+        if !extract_output.status.success() {
+            let stderr = String::from_utf8_lossy(&extract_output.stderr);
+            return Err(TranscodeError::FFmpegError(format!("Audio extraction failed: {}", stderr)));
+        }
+        
+        // For now, just rename temp to final (without BEXT insertion)
+        // TODO: Add BEXT timecode insertion using Python script or native Rust
+        std::fs::rename(&temp_wav, &job.output_path)
+            .map_err(|e| TranscodeError::IOError(e))?;
+        
+        info!("BWF created successfully at: {:?}", job.output_path);
+        Ok(())
     }
 
     /// Get number of active workers
