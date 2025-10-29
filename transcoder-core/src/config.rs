@@ -231,13 +231,29 @@ impl TranscodeConfig {
             }
             VideoCodec::H264 => {
                 args.push("-c:v".to_string());
-                args.push("libx264".to_string());
-                args.push("-preset".to_string());
-                args.push("medium".to_string());
+                if self.hw_accel {
+                    #[cfg(target_os = "macos")]
+                    args.push("h264_videotoolbox".to_string());
+                    #[cfg(not(target_os = "macos"))]
+                    args.push("libx264".to_string());
+                } else {
+                    args.push("libx264".to_string());
+                }
+                if !self.hw_accel {
+                    args.push("-preset".to_string());
+                    args.push("medium".to_string());
+                }
             }
             VideoCodec::H265 => {
                 args.push("-c:v".to_string());
-                args.push("libx265".to_string());
+                if self.hw_accel {
+                    #[cfg(target_os = "macos")]
+                    args.push("hevc_videotoolbox".to_string());
+                    #[cfg(not(target_os = "macos"))]
+                    args.push("libx265".to_string());
+                } else {
+                    args.push("libx265".to_string());
+                }
             }
             VideoCodec::Copy => {
                 args.push("-c:v".to_string());
@@ -479,19 +495,106 @@ impl CodecPreset {
         }
     }
 
+    /// H.264 hardware-accelerated preset (fast, delivery quality)
+    pub fn h264_fast() -> Self {
+        Self {
+            name: "H.264 (Fast HW)".to_string(),
+            description: "Hardware-accelerated H.264 for fast delivery/proxies".to_string(),
+            config: TranscodeConfig {
+                video_codec: VideoCodec::H264,
+                audio_codec: AudioCodec::AAC,
+                container: ContainerFormat::MP4,
+                video_bitrate: Some("15M".to_string()),  // Good quality at reasonable size
+                audio_bitrate: Some("256k".to_string()),
+                audio_sample_rate: Some(48000),
+                hw_accel: true,           // Hardware acceleration enabled
+                extract_bwf: false,
+                map_all_audio: true,
+                ..Default::default()
+            },
+        }
+    }
+
+    /// H.264 high quality hardware-accelerated preset
+    pub fn h264_hq_fast() -> Self {
+        Self {
+            name: "H.264 HQ (Fast HW)".to_string(),
+            description: "Hardware-accelerated H.264 high quality for delivery".to_string(),
+            config: TranscodeConfig {
+                video_codec: VideoCodec::H264,
+                audio_codec: AudioCodec::AAC,
+                container: ContainerFormat::MP4,
+                video_bitrate: Some("25M".to_string()),  // Higher bitrate for quality
+                audio_bitrate: Some("320k".to_string()),
+                audio_sample_rate: Some(48000),
+                hw_accel: true,
+                extract_bwf: false,
+                map_all_audio: true,
+                ..Default::default()
+            },
+        }
+    }
+
+    /// HEVC/H.265 hardware-accelerated preset (best compression)
+    pub fn hevc_fast() -> Self {
+        Self {
+            name: "HEVC/H.265 (Fast HW)".to_string(),
+            description: "Hardware-accelerated HEVC for best compression - half the size of H.264!".to_string(),
+            config: TranscodeConfig {
+                video_codec: VideoCodec::H265,
+                audio_codec: AudioCodec::AAC,
+                container: ContainerFormat::MP4,
+                video_bitrate: Some("12M".to_string()),  // HEVC needs less bitrate for same quality
+                audio_bitrate: Some("256k".to_string()),
+                audio_sample_rate: Some(48000),
+                hw_accel: true,
+                extract_bwf: false,
+                map_all_audio: true,
+                ..Default::default()
+            },
+        }
+    }
+
+    /// HEVC/H.265 high quality hardware-accelerated preset
+    pub fn hevc_hq_fast() -> Self {
+        Self {
+            name: "HEVC/H.265 HQ (Fast HW)".to_string(),
+            description: "Hardware-accelerated HEVC high quality - amazing compression!".to_string(),
+            config: TranscodeConfig {
+                video_codec: VideoCodec::H265,
+                audio_codec: AudioCodec::AAC,
+                container: ContainerFormat::MP4,
+                video_bitrate: Some("18M".to_string()),  // Higher bitrate for quality
+                audio_bitrate: Some("320k".to_string()),
+                audio_sample_rate: Some(48000),
+                hw_accel: true,
+                extract_bwf: false,
+                map_all_audio: true,
+                ..Default::default()
+            },
+        }
+    }
+
     /// Get all built-in presets
     pub fn all_presets() -> HashMap<String, CodecPreset> {
         let mut presets = HashMap::new();
         
         let preset_list = vec![
-            Self::dnxhr_lb_fast(),  // NEW: Fastest preset with HW accel
+            // Hardware-accelerated presets (FAST!)
+            Self::dnxhr_lb_fast(),     // DNxHR LB with HW accel
+            Self::h264_fast(),         // H.264 with HW accel
+            Self::h264_hq_fast(),      // H.264 HQ with HW accel
+            Self::hevc_fast(),         // HEVC with HW accel
+            Self::hevc_hq_fast(),      // HEVC HQ with HW accel
+            
+            // Standard presets
             Self::prores_hq(),
             Self::prores_422(),
             Self::prores_lt(),
             Self::dnxhr_hqx(),
             Self::dnxhr_hq(),
             Self::dnxhr_sq(),
-            Self::h264_high(),
+            Self::h264_high(),         // Software H.264 (slower but more compatible)
         ];
 
         for preset in preset_list {
