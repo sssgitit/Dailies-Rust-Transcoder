@@ -137,6 +137,8 @@ pub struct TranscodeConfig {
     pub hw_accel: bool,                  // Hardware acceleration (VideoToolbox on macOS)
     pub extract_bwf: bool,               // Extract BWF audio files alongside video
     pub map_all_audio: bool,             // Map all audio tracks (not just first)
+    pub lut_path: Option<String>,        // Path to LUT file (.cube) for color grading
+    pub create_ale: bool,                // Create Avid Log Exchange file
 }
 
 impl Default for TranscodeConfig {
@@ -156,6 +158,8 @@ impl Default for TranscodeConfig {
             hw_accel: true,              // Enable by default on macOS
             extract_bwf: false,          // Optional feature
             map_all_audio: true,         // Map all audio tracks by default
+            lut_path: None,              // Optional LUT file
+            create_ale: false,           // Optional ALE creation
         }
     }
 }
@@ -277,6 +281,12 @@ impl TranscodeConfig {
         if let Some(fps) = self.frame_rate {
             args.push("-r".to_string());
             args.push(fps.to_string());
+        }
+
+        // LUT application (3D LUT for color grading)
+        if let Some(lut_path) = &self.lut_path {
+            args.push("-vf".to_string());
+            args.push(format!("lut3d=file='{}'", lut_path));
         }
 
         // Audio codec

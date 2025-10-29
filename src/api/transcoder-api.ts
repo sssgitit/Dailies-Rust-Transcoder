@@ -73,6 +73,8 @@ export interface AddJobRequest {
   name_suffix?: string;
   video_output_folder?: string;
   bwf_output_folder?: string;
+  lut_path?: string;
+  create_ale?: boolean;
 }
 
 export interface QueueStats {

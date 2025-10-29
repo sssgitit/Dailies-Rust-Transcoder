@@ -76,6 +76,8 @@ pub struct AddJobRequest {
     pub name_suffix: Option<String>,
     pub video_output_folder: Option<PathBuf>,
     pub bwf_output_folder: Option<PathBuf>,
+    pub lut_path: Option<PathBuf>,
+    pub create_ale: Option<bool>,
 }
 
 /// Generate output file name based on naming mode
@@ -148,8 +150,19 @@ pub async fn add_job(
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
 
-    // Create job config with BWF option
+    // Create job config with LUT, BWF, and ALE options
     let mut config = preset.config.clone();
+    
+    // Apply LUT if provided
+    if let Some(lut_path) = &request.lut_path {
+        config.lut_path = Some(lut_path.to_string_lossy().to_string());
+    }
+    
+    // Apply ALE flag if provided
+    if let Some(create_ale) = request.create_ale {
+        config.create_ale = create_ale;
+    }
+    
     if let Some(create_bwf) = request.create_bwf {
         // Add BWF creation flag to config
         let mut config_value = serde_json::to_value(&config).map_err(|e| e.to_string())?;

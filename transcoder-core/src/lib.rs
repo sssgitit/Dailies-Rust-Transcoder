@@ -3,6 +3,7 @@
 //! Cross-platform, multi-threaded media transcoding engine
 //! Supports macOS, Windows, and Linux
 
+pub mod ale;
 pub mod config;
 pub mod error;
 pub mod job;
@@ -14,6 +15,7 @@ pub mod queue;
 pub mod transcode;
 pub mod worker;
 
+pub use ale::{AleEntry, AleGenerator};
 pub use config::{CodecPreset, TranscodeConfig};
 pub use error::{TranscodeError, TranscodeResult};
 pub use job::{Job, JobId, JobStatus};
