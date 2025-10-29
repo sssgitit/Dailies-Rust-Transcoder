@@ -32,6 +32,10 @@ export const AddJobDialog: React.FC<AddJobDialogProps> = ({ onClose, onJobAdded 
   // Separate folder options
   const [videoOutputFolder, setVideoOutputFolder] = useState<string>('');
   const [bwfOutputFolder, setBwfOutputFolder] = useState<string>('');
+  
+  // LUT and ALE options
+  const [lutPath, setLutPath] = useState<string>('');
+  const [createAle, setCreateAle] = useState<boolean>(false);
 
   useEffect(() => {
     getPresets()
@@ -112,6 +116,26 @@ export const AddJobDialog: React.FC<AddJobDialogProps> = ({ onClose, onJobAdded 
     }
   };
 
+  const handleSelectLut = async () => {
+    try {
+      const selected = await open({
+        multiple: false,
+        filters: [
+          {
+            name: 'LUT Files',
+            extensions: ['cube', 'CUBE'],
+          },
+        ],
+      });
+
+      if (selected && typeof selected === 'string') {
+        setLutPath(selected);
+      }
+    } catch (err) {
+      setError(`Failed to select LUT file: ${err}`);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -138,6 +162,8 @@ export const AddJobDialog: React.FC<AddJobDialogProps> = ({ onClose, onJobAdded 
           name_suffix: nameSuffix || undefined,
           video_output_folder: videoOutputFolder || undefined,
           bwf_output_folder: bwfOutputFolder || undefined,
+          lut_path: lutPath || undefined,
+          create_ale: createAle || undefined,
         });
       }
 
@@ -437,6 +463,57 @@ export const AddJobDialog: React.FC<AddJobDialogProps> = ({ onClose, onJobAdded 
                 <div className="font-semibold">Also Create BWF Audio (WAV)</div>
                 <div className="text-sm text-gray-400 mt-1">
                   Frame-accurate BEXT timecode • 48kHz 24-bit • Stereo mixdown • Auto-extracted from video
+                </div>
+              </div>
+            </label>
+          </div>
+
+          {/* LUT File Option */}
+          <div>
+            <label className="block text-sm font-semibold mb-2">Apply LUT (Optional)</label>
+            <p className="text-xs text-gray-500 mb-3">Apply 3D LUT (.cube) for color grading during transcode</p>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={handleSelectLut}
+                className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded font-semibold transition-colors text-sm"
+              >
+                📁 Select LUT
+              </button>
+              {lutPath ? (
+                <>
+                  <div className="flex-1 px-3 py-2 bg-gray-900 rounded border border-gray-700 truncate text-sm">
+                    {lutPath.split('/').pop()}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setLutPath('')}
+                    className="px-3 py-2 bg-red-700 hover:bg-red-600 rounded transition-colors text-sm"
+                  >
+                    ✕
+                  </button>
+                </>
+              ) : (
+                <div className="flex-1 px-3 py-2 bg-gray-900 rounded border border-gray-700 text-gray-500 text-sm">
+                  No LUT selected
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* ALE Creation Option */}
+          <div>
+            <label className="flex items-center cursor-pointer p-4 bg-gray-900 rounded-lg border-2 border-gray-700 hover:border-green-500 transition-colors">
+              <input
+                type="checkbox"
+                checked={createAle}
+                onChange={(e) => setCreateAle(e.target.checked)}
+                className="w-5 h-5 rounded bg-gray-900 border-gray-600 text-green-600 focus:ring-2 focus:ring-green-500 cursor-pointer"
+              />
+              <div className="ml-4 flex-1">
+                <div className="font-semibold">Create Avid ALE File</div>
+                <div className="text-sm text-gray-400 mt-1">
+                  Generate Avid Log Exchange file with timecode/metadata for Media Composer
                 </div>
               </div>
             </label>
